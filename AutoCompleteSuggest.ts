@@ -19,6 +19,7 @@ interface ExtendedHeadingCache extends HeadingCache {
 export class AutoCompleteSuggest extends EditorSuggest<any>
 {
   app: App;
+  mode: String;
   private constructor(app: App) {
     super(app);
     this.app = app;
@@ -40,12 +41,15 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
     // console.log(activeFile);
 
     let sliceText = editor.getLine(cursor.line).slice(0, cursor.ch);    // markdown link
-    let match = sliceText.match(/\[([^\]]*)\]\((\<?)([^\)\>#\^]+)(\>?)\)#$/);
-    if(match === null) return null;
-    
-    let matchText = match[0];
-    let title = match[1];
-    let path = match[3];
+    let matchHeadingBlock = sliceText.match(/\[([^\]]*)\]\((\<?)([^\)\>#\^]+)(\>?)\)(#|\^)$/);
+
+    if(matchHeadingBlock === null) return null;
+
+
+    let matchText = matchHeadingBlock[0];
+    let title = matchHeadingBlock[1];
+    let path = matchHeadingBlock[3];
+    this.mode = matchHeadingBlock[5] == `#` ? "heading" : "block";
 
     // get heading
     let firstLinkTFile = this.app.metadataCache.getFirstLinkpathDest(path, activeFile.path);
@@ -53,13 +57,22 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
 
     let metadata = this.app.metadataCache.getFileCache(firstLinkTFile);
     if(metadata === null) return null;
-    // console.log(`metadata: `);
-    // console.log(metadata);
+    console.log(`metadata: `);
+    console.log(metadata);
 
-    let suggestions = metadata.headings?.map((heading) => {
-      let extendedHeading: ExtendedHeadingCache = {...heading, matchText: matchText, title: title, path: path};
-      return extendedHeading;
-    });
+    let suggestions;
+    if(this.mode == "heading"){
+      suggestions = metadata.headings?.map((heading) => {
+        let extendedHeading: ExtendedHeadingCache = {...heading, matchText: matchText, title: title, path: path};
+        return extendedHeading;
+      });
+    }
+    else if(this.mode == "block"){
+      return null;
+    }
+    else{
+      return null;
+    }
 
     // console.log(`suggestions: `);
     // console.log(suggestions);
@@ -85,30 +98,33 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
     // console.log(suggestion)
     // console.log(el);
 
-    const base = createDiv();
-    const heading = suggestion.heading;
 
-    base.style.display = `flex`;
-
-    const headingDiv = base.createDiv({ text: heading });
-    headingDiv.style.display = 'flex';
-    headingDiv.style.alignItems = `center`;
-    headingDiv.style.margin = `8px`;
-
-    const levelDiv = base.createDiv({ text: `H${suggestion.level}` });
-    levelDiv.style.display = 'flex';
-    levelDiv.style.alignItems = `center`;
-    levelDiv.style.color = `#8a8a8a`;
-
-    el.addClass("complement-link-heading-and-block-suggestion-item");
-    el.style.display = `flex`;
-    el.style.justifyContent = `space-between`;
-    el.style.marginLeft = `auto`;
-    el.style.alignItems = `center`;
-    el.style.padding = `8px 0`;
-
-    el.appendChild(base);
-
+    if(this.mode === "heading"){
+      const base = createDiv();
+      const heading = suggestion.heading;
+  
+      base.style.display = `flex`;
+  
+      const headingDiv = base.createDiv({ text: heading });
+      headingDiv.style.display = 'flex';
+      headingDiv.style.alignItems = `center`;
+      headingDiv.style.margin = `8px`;
+  
+      const levelDiv = base.createDiv({ text: `H${suggestion.level}` });
+      levelDiv.style.display = 'flex';
+      levelDiv.style.alignItems = `center`;
+      levelDiv.style.color = `#8a8a8a`;
+  
+      el.addClass("complement-link-heading-and-block-suggestion-item");
+      el.style.display = `flex`;
+      el.style.justifyContent = `space-between`;
+      el.style.marginLeft = `auto`;
+      el.style.alignItems = `center`;
+      el.style.padding = `8px 0`;
+  
+      el.appendChild(base);  
+    }
+    
     // setTimeout(()=>{
     //   debugger;
     // }, 1000);
