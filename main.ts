@@ -5,7 +5,7 @@ import { AutoCompleteSuggest } from "AutoCompleteSuggest";
 export default class ComplementLinkHeadingAndBlock extends Plugin {
 	suggester: AutoCompleteSuggest;
 	async onload() {
-		console.log("test");
+		console.log("load Complement Link Heading And Block");
 
 		this.suggester = AutoCompleteSuggest.createInstance(this.app);
 		this.registerEditorSuggest(this.suggester);
