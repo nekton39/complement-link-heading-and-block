@@ -6,6 +6,7 @@ import {
     EditorPosition,
     EditorSuggestTriggerInfo, // Add this line if it's available in the "obsidian" package
     HeadingCache,
+    SectionCache,
     TFile
 } from "obsidian";
 
@@ -14,6 +15,12 @@ interface ExtendedHeadingCache extends HeadingCache {
   matchText?: string;
   title?: string;
   path?: string;
+}
+interface ExtendedSectionCache extends SectionCache {
+  matchText?: string;
+  title?: string;
+  path?: string;
+  isNewID?: boolean;
 }
 
 export class AutoCompleteSuggest extends EditorSuggest<any>
@@ -40,12 +47,13 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
     // console.log(`activeFile: `);
     // console.log(activeFile);
 
-    let sliceText = editor.getLine(cursor.line).slice(0, cursor.ch);    // markdown link
+    // check markdown link
+    let sliceText = editor.getLine(cursor.line).slice(0, cursor.ch);
     let matchHeadingBlock = sliceText.match(/\[([^\]]*)\]\((\<?)([^\)\>#\^]+)(\>?)\)(#|\^)$/);
 
     if(matchHeadingBlock === null) return null;
 
-
+    // choice mode
     let matchText = matchHeadingBlock[0];
     let title = matchHeadingBlock[1];
     let path = matchHeadingBlock[3];
@@ -57,9 +65,10 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
 
     let metadata = this.app.metadataCache.getFileCache(firstLinkTFile);
     if(metadata === null) return null;
-    console.log(`metadata: `);
-    console.log(metadata);
+    // console.log(`metadata: `);
+    // console.log(metadata);
 
+    // make suggestion item object
     let suggestions;
     if(this.mode == "heading"){
       suggestions = metadata.headings?.map((heading) => {
@@ -68,7 +77,12 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
       });
     }
     else if(this.mode == "block"){
-      return null;
+      suggestions = metadata.sections?.map((section) => {
+        let isNewID = section.id === undefined;
+        let id = (isNewID ? generateId() : section.id);
+        let extendedSection: ExtendedSectionCache = {...section, matchText: matchText, title: title, path: path, id: id, isNewID: isNewID};
+        return extendedSection;
+      });
     }
     else{
       return null;
@@ -77,6 +91,7 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
     // console.log(`suggestions: `);
     // console.log(suggestions);
 
+    // this value send to getSuggestions() as context
     return {
       start: {
         line: cursor.line,
@@ -85,6 +100,11 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
       end: cursor,
       query: JSON.stringify(suggestions)
     };
+
+    // for generating block id
+    function generateId(){
+      return Math.random().toString(36).substring(2, 8);
+    }
   }
 
   getSuggestions(context: EditorSuggestContext): Promise<any> {
@@ -93,16 +113,109 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
     });
   }
 
-  renderSuggestion(suggestion: any, el: HTMLElement): void {
-    // Implementation
+  renderSuggestion(suggestion: any, el: HTMLElement) {
     // console.log(suggestion)
     // console.log(el);
 
-
+    // heading
     if(this.mode === "heading"){
-      const base = createDiv();
-      const heading = suggestion.heading;
+      // make HTML elements and set style seettings
+      processHeading(suggestion.heading, el);
+      return;
+    }
+    // for block (it means even section)
+    if(this.mode === "block"){
+
+      // get TFiles, activeFile and targetFile
+      const activeFile = this.app.workspace.getActiveFile();
+      if(activeFile === null) return;
+      const targetTFile = this.app.metadataCache.getFirstLinkpathDest(suggestion.path, activeFile.path);
+      if(targetTFile === null) return;
+
+      this.app.vault.read(targetTFile).then((content)=>{
+        let arrayText = content.split('\n');
+
+        // paragraph type is block
+        if(suggestion.type === "paragraph"){
+
+          // get block text
+          let text = "";
+          for(let line_i=suggestion.position.start.line; line_i <= suggestion.position.end.line; line_i++){
+            text += arrayText[line_i] + '\n';
+          }
+          text = text.trim();  
+          // console.log(text);
   
+          // make HTML elements and set style seettings
+          const base = createDiv();
+          base.addClass("complement-link-heading-and-block-suggestion-base");
+          base.style.display = `flex`;
+
+          const blockDiv = base.createDiv({ text: `${text}` });
+          blockDiv.addClass("complement-link-heading-and-block-suggestion-block");
+          blockDiv.style.display = 'flex';
+          blockDiv.style.alignItems = `center`;
+          blockDiv.style.margin = `8px`;
+      
+          const idDiv = base.createDiv({ text: `>${suggestion.id}`});
+          idDiv.addClass("complement-link-heading-and-block-suggestion-id");
+          idDiv.style.display = 'flex';
+          idDiv.style.alignItems = `center`;
+          idDiv.style.color = `#8a8a8a`;
+      
+          el.addClass("complement-link-heading-and-block-suggestion-item");
+          el.style.display = `flex`;
+          el.style.justifyContent = `space-between`;
+          el.style.marginLeft = `auto`;
+          el.style.alignItems = `center`;
+          el.style.padding = `8px 0`;
+      
+          el.appendChild(base);
+          return;
+        }
+        // for heading
+        if(suggestion.type === "heading"){
+          // get heading text
+          let text = arrayText[suggestion.position.start.line];
+          text = text.trim();
+          
+          // get heading level
+          let match = text.match(/^#+/);
+          if(match === null) return;
+          let level = match[0].length;
+          // console.log(text);
+          // console.log(level);
+
+          // make HTML elements and set style seettings
+          const base = createDiv();
+          base.addClass("complement-link-heading-and-block-suggestion-base");
+          base.style.display = `flex`;
+      
+          const headingDiv = base.createDiv({ text: text });
+          headingDiv.addClass("complement-link-heading-and-block-suggestion-heading");
+          headingDiv.style.display = 'flex';
+          headingDiv.style.alignItems = `center`;
+          headingDiv.style.margin = `8px`;
+      
+          const levelDiv = base.createDiv({ text: `H${level}` });
+          levelDiv.addClass("complement-link-heading-and-block-suggestion-level");
+          levelDiv.style.display = 'flex';
+          levelDiv.style.alignItems = `center`;
+          levelDiv.style.color = `#8a8a8a`;
+      
+          el.addClass("complement-link-heading-and-block-suggestion-item");
+          el.style.display = `flex`;
+          el.style.justifyContent = `space-between`;
+          el.style.marginLeft = `auto`;
+          el.style.alignItems = `center`;
+          el.style.padding = `8px 0`;
+          el.appendChild(base);      
+        }
+      });
+    }
+
+    function processHeading(heading: string, el: HTMLElement){
+      const base = createDiv();  
       base.style.display = `flex`;
   
       const headingDiv = base.createDiv({ text: heading });
@@ -124,26 +237,70 @@ export class AutoCompleteSuggest extends EditorSuggest<any>
   
       el.appendChild(base);  
     }
-    
-    // setTimeout(()=>{
-    //   debugger;
-    // }, 1000);
   }
 
   selectSuggestion(suggestion: any, evt: MouseEvent | KeyboardEvent): void {
-    // Implementation
+    let insertText: string;
 
-    let insertText = `[${suggestion.title}](<${suggestion.path}#${suggestion.heading}>)`;
+    // for heading
+    if(this.mode === "heading" ){
+      // make insert text
+      insertText = `[${suggestion.title}](<${suggestion.path}#${suggestion.heading}>)`;  
+      
+      // insert text to active File
+      this.context?.editor.replaceRange(
+        insertText,
+        this.context.start,
+        this.context.end
+      );  
+    }
 
+    // for block (it means even section)
+    if(this.mode === "block"){
+      // get TFiles, activeFile and targetFile
+      const activeFile = this.app.workspace.getActiveFile();
+      if(activeFile === null) return;
+      const targetTFile = this.app.metadataCache.getFirstLinkpathDest(suggestion.path, activeFile.path);
+      if(targetTFile === null) return;
+
+      // read text from targetFile
+      this.app.vault.read(targetTFile).then((content)=>{
+        let textArray = content.split('\n');
+        
+        // for heading
+        if(suggestion.type === "heading"){
+          // make insert text
+          let match = textArray[suggestion.position.start.line].match(/^#+ (.*)$/);
+          if(match === null) return;
+          let heading = match[1];
+          insertText = `[${suggestion.title}](<${suggestion.path}#${heading}>)`;
+        }
+
+        // for block (it means even section)
+        if(suggestion.type === "paragraph"){
+          // make insert text
+          insertText = `[${suggestion.title}](<${suggestion.path}#^${suggestion.id}>)`;
+          
+          // write block id to targetFile when it doesn't have block id
+          if(suggestion.isNewID){
+            let a = content.slice(0, suggestion.position.end.offset);
+            let b = ` ^${suggestion.id}`;
+            let c = content.slice(suggestion.position.end.offset);
+            let newFileContent = a + b + c;
+            this.app.vault.modify(targetTFile, newFileContent);  
+          }
+        }
+
+        // insert text to active File
+        this.context?.editor.replaceRange(
+          insertText,
+          this.context.start,
+          this.context.end
+        );
+      });
+    }
     // console.log(`insertText: ${insertText}`);
     // console.log(this.context);
-
-    this.context?.editor.replaceRange(
-      insertText,
-      this.context.start,
-      this.context.end
-    );
-
   }
   
   // Implement other required methods and properties...
